@@ -43,14 +43,34 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 24px;
+  padding: 12px 16px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);
+  gap: 12px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.menu-toggle {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 24px;
+  cursor: pointer;
+  padding: 4px;
 }
 
 .dashboard-header h1 {
-  font-size: 20px;
+  font-size: 18px;
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .header-actions {
@@ -514,4 +534,171 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
+}
+
+/* 控制面板头部（移动端） */
+.control-panel-header {
+  display: none;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.control-panel-header span {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+/* 遮罩层 */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 99;
+}
+
+/* ========== 移动端适配 ========== */
+@media (max-width: 768px) {
+  .menu-toggle {
+    display: block;
+  }
+
+  .dashboard-header {
+    padding: 10px 12px;
+  }
+
+  .dashboard-header h1 {
+    font-size: 16px;
+  }
+
+  .header-actions {
+    gap: 6px;
+  }
+
+  .header-actions button {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  /* 侧边栏变为覆盖层 */
+  .sidebar-overlay {
+    display: block;
+  }
+
+  .control-panel {
+    position: fixed;
+    top: 0;
+    left: -300px;
+    width: 280px;
+    height: 100vh;
+    z-index: 100;
+    transition: left 0.3s ease;
+    border-right: 1px solid var(--border-color);
+  }
+
+  .control-panel.open {
+    left: 0;
+  }
+
+  .control-panel-header {
+    display: flex;
+  }
+
+  .control-panel-inner {
+    padding: 12px;
+  }
+
+  .main-panel {
+    padding: 12px;
+  }
+
+  /* 指示卡片 */
+  .indicator-cards {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .indicator-card {
+    padding: 10px;
+  }
+
+  .card-value {
+    font-size: 14px;
+  }
+
+  .card-label {
+    font-size: 11px;
+  }
+
+  /* 图表 */
+  .chart-panel {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .chart-item {
+    padding: 12px;
+  }
+
+  .chart-header {
+    font-size: 13px;
+  }
+
+  /* 表格 */
+  .data-table th,
+  .data-table td {
+    padding: 8px 6px;
+    font-size: 11px;
+  }
+
+  /* 预设按钮 */
+  .preset-btn {
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+
+  /* 固定参数 */
+  .param-row {
+    font-size: 12px;
+    padding: 3px 0;
+  }
+
+  .control-panel-inner h3 {
+    font-size: 13px;
+  }
+}
+
+/* 小屏手机 */
+@media (max-width: 480px) {
+  .dashboard-header h1 {
+    font-size: 14px;
+  }
+
+  .indicator-cards {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .header-actions button {
+    padding: 5px 8px;
+    font-size: 11px;
+  }
 }

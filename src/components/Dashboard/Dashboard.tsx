@@ -1,18 +1,17 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSimulator } from '../../store/useSimulator'
 import { ControlPanel } from '../ControlPanel/ControlPanel'
 import { ChartPanel } from '../Charts/ChartPanel'
 import { IndicatorCards } from '../IndicatorCards/IndicatorCards'
 import { DataTable } from '../DataTable/DataTable'
-import { exportToCSV } from '../../utils/export'
-import { saveParams } from '../../utils/storage'
 
 export function Dashboard() {
   const {
-    collapseAll, expandAll, params, results, isRunning, currentPeriod,
+    isRunning, currentPeriod,
     setIsRunning, runSingleStep, resetParams,
   } = useSimulator()
   const timerRef = useRef<number | null>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // 无限模拟：isRunning 时每个 tick 追加一个 period
   useEffect(() => {
@@ -32,25 +31,26 @@ export function Dashboard() {
 
   const handlePause = () => setIsRunning(false)
 
-  const handleSave = () => saveParams(params)
-
-  const handleExport = () => exportToCSV(results)
-
   const handleReset = () => {
-    setIsRunning(false)  // 先停止模拟
-    resetParams()        // 重置参数和数据（包含正确的 currentPeriod: 26）
+    setIsRunning(false)
+    resetParams()
   }
 
   return (
     <div className="dashboard">
       <header className="dashboard-header">
-        <h1>📊 经济模拟器 · 加班对中国经济的影响</h1>
+        <div className="header-left">
+          <button
+            className="menu-toggle"
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            aria-label="切换菜单"
+          >
+            ☰
+          </button>
+          <h1>📊 经济模拟器</h1>
+        </div>
         <div className="header-actions">
-          <button onClick={collapseAll}>全部收起</button>
-          <button onClick={expandAll}>全部展开</button>
           <button onClick={handleReset}>重置</button>
-          <button onClick={handleSave}>保存</button>
-          <button onClick={handleExport}>导出</button>
           {!isRunning ? (
             <button onClick={handlePlay}>▶ 开始</button>
           ) : (
@@ -59,7 +59,15 @@ export function Dashboard() {
         </div>
       </header>
       <div className="dashboard-content">
-        <aside className="control-panel">
+        {/* 移动端遮罩层 */}
+        {sidebarOpen && (
+          <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
+        )}
+        <aside className={`control-panel ${sidebarOpen ? 'open' : ''}`}>
+          <div className="control-panel-header">
+            <span>参数设置</span>
+            <button className="close-btn" onClick={() => setSidebarOpen(false)}>✕</button>
+          </div>
           <ControlPanel />
         </aside>
         <main className="main-panel">
