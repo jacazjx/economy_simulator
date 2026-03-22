@@ -4,11 +4,17 @@ import { getPeriodLabel } from '../Charts/ChartPanel'
 export function IndicatorCards() {
   const { results, currentPeriod, historicalPeriods } = useSimulator()
   const latest = currentPeriod > 0 ? results[currentPeriod - 1] : null
+  const prev = currentPeriod > 1 ? results[currentPeriod - 2] : null
 
   if (!latest) return null
 
   const isHistorical = latest.period <= historicalPeriods
   const yearLabel = getPeriodLabel(latest.period)
+
+  // 计算人口增长率
+  const populationGrowthRate = prev
+    ? (latest.population - prev.population) / prev.population
+    : 0
 
   const cards = [
     { label: '当前年份', value: yearLabel, change: isHistorical ? '历史数据' : '模拟预测', changeClass: isHistorical ? 'historical' : 'simulated' },
@@ -17,7 +23,7 @@ export function IndicatorCards() {
     { label: '通胀率', value: `${(latest.inflationRate * 100).toFixed(1)}%`, change: '' },
     { label: '平均工资', value: `${latest.wage.toFixed(2)}万`, change: '' },
     { label: '劳动生产率', value: `${latest.laborProductivity.toFixed(1)}元/h`, change: '' },
-    { label: '总人口', value: `${(latest.population / 10000).toFixed(1)}亿`, change: '' },
+    { label: '总人口', value: `${(latest.population / 10000).toFixed(1)}亿`, change: `${(populationGrowthRate * 100).toFixed(2)}%` },
     { label: '净出口', value: `${(latest.netExport / 10000).toFixed(2)}万亿`, change: '' },
   ]
 
