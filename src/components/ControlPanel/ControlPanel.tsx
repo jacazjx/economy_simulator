@@ -66,10 +66,10 @@ export function ControlPanel() {
       </section>
 
       <section>
-        <h3>⏰ 加班参数（可调节）</h3>
+        <h3>⏰ 工时政策（可调节）</h3>
         <div className="slider-control">
           <label>
-            工时调整（小时/周）: <span>{params.overtimeHours >= 0 ? '+' : ''}{params.overtimeHours} h</span>
+            工时偏移（小时/周）: <span>{params.overtimeHours >= 0 ? '+' : ''}{params.overtimeHours} h</span>
           </label>
           <input
             type="range"
@@ -82,7 +82,7 @@ export function ControlPanel() {
         </div>
         <div className="slider-control">
           <label>
-            加班率: <span>{(params.overtimeRate * 100).toFixed(0)}%</span>
+            {params.overtimeHours >= 0 ? '加班覆盖率' : '减时覆盖率'}: <span>{(params.overtimeRate * 100).toFixed(0)}%</span>
           </label>
           <input
             type="range"
@@ -94,7 +94,10 @@ export function ControlPanel() {
           />
         </div>
         <p className="param-hint">
-          加班率 = 参与加班的劳动者比例
+          {params.overtimeHours >= 0
+            ? `${(params.overtimeRate * 100).toFixed(0)}% 的劳动者每周加班 ${params.overtimeHours}h，人均周工时 ${(params.normalHours + params.overtimeRate * params.overtimeHours).toFixed(1)}h`
+            : `${(params.overtimeRate * 100).toFixed(0)}% 的劳动者每周缩短 ${-params.overtimeHours}h，人均周工时 ${(params.normalHours + params.overtimeRate * params.overtimeHours).toFixed(1)}h`
+          }
         </p>
 
         <div className="preset-buttons">

@@ -39,9 +39,14 @@ interface SimState {
 
 const CHART_KEYS = ['gdp', 'unemployment', 'wage', 'birthPopulation', 'population', 'populationStructure']
 
-// 转换历史数据为PeriodResult数组，并累积价格水平
+// 转换历史数据为PeriodResult数组
+// 链式传递 prevResult，使累积疲劳等变量在历史期内连续演化
 const loadHistoricalResults = (params: Params): PeriodResult[] => {
-  const results = CHINA_HISTORICAL_DATA.map(data => convertToPeriodResult(data, params))
+  const results: PeriodResult[] = []
+  for (const data of CHINA_HISTORICAL_DATA) {
+    const prev = results.length > 0 ? results[results.length - 1] : undefined
+    results.push(convertToPeriodResult(data, params, prev))
+  }
   // 后处理：从基期（2000年=1.0）累积价格水平
   let priceLevel = 1.0
   for (const r of results) {
@@ -62,7 +67,7 @@ function computeTFPBase(historicalResults: PeriodResult[], params: Params): numb
   const totalHours = params.normalHours + overtimeHours
   const excessHours = overtimeHours
   const fatigueFactor = params.fatigueCoeff * Math.pow(excessHours / params.normalHours, 2)
-  const efficiencyFactor = Math.max(0.5, 1 - fatigueFactor)
+  const efficiencyFactor = Math.max(0.3, 1 - fatigueFactor)  // 与 model.ts runSinglePeriod 一致
   const effectiveWeeklyHours =
     (1 - overtimeRate) * params.normalHours
     + overtimeRate * totalHours * efficiencyFactor
@@ -135,7 +140,7 @@ export const useSimulator = create<SimState & UIState>()(
 
       // 追加一个周期（用于动画播放时额外延伸）
       runSingleStep: () => {
-        const { params, results, tfpBase, maxYear } = get()
+        const { params, results, tfpBase, maxYear, historicalPeriods } = get()
         // 计算下一期年份，检查是否超过最大年份
         const nextPeriod = results.length + 1
         const nextYear = 1999 + nextPeriod  // period 1 = 2000, period 26 = 2025
@@ -143,8 +148,23 @@ export const useSimulator = create<SimState & UIState>()(
           set({ isRunning: false })  // 达到最大年份，停止模拟
           return
         }
+
+        // 政策过渡机制：加班参数在 5 年内从中国基准平滑过渡到用户设定值
+        // 避免参数突变导致 GDP / 就业等指标剧烈跳变
+        // 第1年 blend=0.2（80%基准+20%用户），第5年 blend=1.0（100%用户）
+        const TRANSITION_YEARS = 5
+        const yearsIntoSimulation = nextPeriod - historicalPeriods  // ≥1 for simulation periods
+        const blend = Math.min(1, Math.max(0, yearsIntoSimulation / TRANSITION_YEARS))
+        const effectiveParams: Params = {
+          ...params,
+          overtimeHours: CHINA_BASELINE_OVERTIME.overtimeHours
+            + blend * (params.overtimeHours - CHINA_BASELINE_OVERTIME.overtimeHours),
+          overtimeRate: CHINA_BASELINE_OVERTIME.overtimeRate
+            + blend * (params.overtimeRate - CHINA_BASELINE_OVERTIME.overtimeRate),
+        }
+
         const prev = results.length > 0 ? results[results.length - 1] : null
-        const newResult = runSinglePeriod(params, prev, nextPeriod, tfpBase)
+        const newResult = runSinglePeriod(effectiveParams, prev, nextPeriod, tfpBase)
         set((state) => ({
           results: [...state.results, newResult],
           currentPeriod: state.currentPeriod + 1,

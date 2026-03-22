@@ -14,6 +14,7 @@ export function IndicatorCards() {
     { label: '当前年份', value: yearLabel, change: isHistorical ? '历史数据' : '模拟预测', changeClass: isHistorical ? 'historical' : 'simulated' },
     { label: 'GDP', value: `${(latest.gdp / 10000).toFixed(2)}万亿`, change: `${(latest.gdpGrowthRate * 100).toFixed(1)}%` },
     { label: '失业率', value: `${(latest.unemploymentRate * 100).toFixed(1)}%`, change: '' },
+    { label: '通胀率', value: `${(latest.inflationRate * 100).toFixed(1)}%`, change: '' },
     { label: '平均工资', value: `${latest.wage.toFixed(2)}万`, change: '' },
     { label: '劳动生产率', value: `${latest.laborProductivity.toFixed(1)}元/h`, change: '' },
     { label: '总人口', value: `${(latest.population / 10000).toFixed(1)}亿`, change: '' },

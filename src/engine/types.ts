@@ -5,8 +5,8 @@ export interface Params {
   techLevel: number             // 技术水平 A（基准=1）
   capitalElasticity: number      // 资本弹性 α
   normalHours: number            // 正常工时（小时/周）
-  overtimeHours: number         // 加班时长（小时/周）← 用户可调
-  overtimeRate: number          // 加班率（0-1）← 用户可调
+  overtimeHours: number         // 工时偏移（小时/周）：正=加班，负=缩短工时 ← 用户可调
+  overtimeRate: number          // 工时调整覆盖率（0-1）：受该政策影响的劳动者比例 ← 用户可调
   fatigueCoeff: number          // 疲劳系数 β（二次方公式：β×(excess/normal)²）
   attritionCoeff: number         // 劳动力流失系数 γ
   laborParticipation: number    // 劳动参与率
@@ -22,6 +22,9 @@ export interface Params {
   depreciationRate: number      // 折旧率
   baseInflation: number         // 基础通胀率（央行锚定目标，约2%）
   phillipsCoeff: number         // 菲利普斯曲线斜率（失业缺口对通胀的影响）
+  // 政府部门
+  taxRate: number               // 综合宏观税率（税收+社保/GDP）
+  govInvestmentShare: number    // 政府支出中投资占比（基建、教育等资本性支出）
 }
 
 export interface PeriodResult {
@@ -68,6 +71,10 @@ export interface PeriodResult {
   // 资本
   capitalStock: number
   investment: number
+  // 政府部门
+  govRevenue: number             // 政府财政收入（亿）
+  govConsumption: number         // 政府消费支出（亿）
+  govInvestment: number          // 政府投资支出（亿）
 }
 
 export interface SimState {
@@ -93,7 +100,7 @@ export const CHINA_2025_PARAMS: Omit<Params, 'overtimeHours' | 'overtimeRate'> =
   capitalReinvestmentRate: 0.45, // 资本收入再投资率（中国企业储蓄率高）
 
   initialExport: 170000,      // 2025年出口约17万亿
-  baseImportPropensity: 0.18, // 基础进口倾向
+  baseImportPropensity: 0.23, // 基础进口倾向（校准：2025实际进口/模型总消费≈0.234）
   techExportElasticity: 0.3,  // 技术对出口弹性
   capacityExportElasticity: 0.2, // 产能对出口弹性
   incomeImportSensitivity: 0.1, // 收入对进口敏感度
@@ -102,6 +109,8 @@ export const CHINA_2025_PARAMS: Omit<Params, 'overtimeHours' | 'overtimeRate'> =
   depreciationRate: 0.08,      // 折旧率（约8%）
   baseInflation: 0.02,         // 基础通胀率（2%，央行隐含目标）
   phillipsCoeff: 0.3,          // 菲利普斯曲线斜率（校准：中国u=5%时通胀≈0.5%）
+  taxRate: 0.18,               // 综合宏观税率（中国广义宏观税负约18%）
+  govInvestmentShare: 0.35,    // 政府支出中投资占比（中国约35%为基建/教育等资本性支出）
 }
 
 export const DEFAULT_PARAMS: Params = {

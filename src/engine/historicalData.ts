@@ -2,7 +2,8 @@
 // 数据来源: 国家统计局年度统计公报
 // 单位与PeriodResult保持一致
 
-import type { Params } from './types'
+import type { Params, PeriodResult } from './types'
+import { CHINA_BASELINE_OVERTIME } from './types'
 
 export interface HistoricalDataPoint {
   year: number
@@ -81,78 +82,177 @@ export const CHINA_HISTORICAL_DATA: HistoricalDataPoint[] = [
 
 /**
  * 转换历史数据为 PeriodResult 格式
- * 使用实际统计数据和合理的宏观经济比例估算缺失字段
+ *
+ * 设计原则：所有派生变量（消费、储蓄、投资、疲劳、通胀等）
+ * 使用与 model.ts runSinglePeriod 完全一致的公式计算，
+ * 确保历史→模拟过渡零跳变。
+ *
+ * 锚定变量（来自实际统计数据，不由模型公式覆盖）：
+ *   population, employment, unemploymentRate, gdp, gdpGrowthRate,
+ *   export, import, netExport
+ *
+ * @param prevResult 上一期结果，用于链式累积（累积疲劳、出口增长率等）
  */
 export function convertToPeriodResult(
   data: HistoricalDataPoint,
-  params: Params
-): import('./types').PeriodResult {
-  // 劳动力 = 人口 × 劳动参与率
-  const laborForce = data.population * params.laborParticipation
-  // 资本产出比：中国约 3.5（2020 年代）
-  const capitalOutputRatio = 3.5
-  const capitalStock = data.gdp * capitalOutputRatio
-  // 年工时：假设历史期间包含一定的加班
-  const weeklyHours = 44 // 中国实际平均约44小时/周
-  const annualHoursPerWorker = weeklyHours * 52
-  // 劳动收入份额：与前瞻模拟一致，使用 Cobb-Douglas 要素份额
-  const laborShareEstimate = 1 - params.capitalElasticity
-  const totalLaborIncome = data.gdp * laborShareEstimate
-  const capitalIncome = data.gdp * (1 - laborShareEstimate)
-  // 消费率：中国约38-40%（最终消费/GDP）
-  const consumptionRate = 0.40
-  const consumption = data.gdp * consumptionRate
-  // 投资率：中国约42-43%
-  const investmentRate = 0.43
-  const investment = data.gdp * investmentRate
+  params: Params,
+  prevResult?: PeriodResult
+): PeriodResult {
+  // === 锚定变量（实际统计数据）===
+  const population = data.population
+  const employment = data.employment
+  const unemploymentRate = data.unemploymentRate
+  const gdp = data.gdp
+  const gdpGrowthRate = data.gdpGrowthRate
 
-  // 人口结构估算（根据国家统计局历史趋势插值）
-  // 2000年：0-14 22.9%, 15-64 70.1%, 65+ 7.0%
-  // 2025年：0-14 16.5%, 15-64 68.2%, 65+ 15.3%
+  // === 人口结构（线性插值）===
   const yearFraction = (data.year - 2000) / 25
   const age0_14 = 0.229 - yearFraction * (0.229 - 0.165)
   const age65plus = 0.070 + yearFraction * (0.153 - 0.070)
   const age15_64 = 1 - age0_14 - age65plus
-  const birthRate = 0.014 - yearFraction * (0.014 - 0.0064) // 14‰(2000) → 6.4‰(2025)
-  const birthPopulation = data.population * birthRate
+  const birthRate = 0.014 - yearFraction * (0.014 - 0.0064)
+  const birthPopulation = population * birthRate
+
+  // === 劳动力 ===
+  const laborForce = population * params.laborParticipation
+
+  // === 资本存量（资本产出比 3.5，与 TFP 校准一致）===
+  const capitalStock = gdp * 3.5
+
+  // === 技术水平（相对于2025年基准，TFP校准已吸收绝对水平）===
+  const currentTechLevel = 1.0
+
+  // === 工时与疲劳（与 model.ts 公式完全一致）===
+  const { overtimeHours: baseOT, overtimeRate: baseOTRate } = CHINA_BASELINE_OVERTIME
+  const totalHoursPerWeek = params.normalHours + baseOT  // 47h
+  const excessHours = Math.max(0, totalHoursPerWeek - params.normalHours)
+  const fatigueFactor = params.fatigueCoeff * Math.pow(excessHours / params.normalHours, 2)
+  const efficiencyFactor = Math.max(0.3, 1 - fatigueFactor)
+
+  // 累积疲劳：链式累积（第一期用稳态近似）
+  const fatigueRecoveryRate = 0.1
+  const cumulativeFatigue = prevResult
+    ? prevResult.cumulativeFatigue * (1 - fatigueRecoveryRate) + fatigueFactor
+    : fatigueFactor / fatigueRecoveryRate  // 稳态 = f / recovery
+
+  // 劳动力留存（与 model.ts 一致）
+  const attrition = 0.001 + params.attritionCoeff * cumulativeFatigue
+  const laborRetention = Math.max(0.7, 1 - attrition)
+
+  // === 有效工时（与 model.ts 分层加权公式一致）===
+  const normalAnnualHours = params.normalHours * 52
+  const overtimeAnnualHours = totalHoursPerWeek * 52
+  const avgAnnualHoursPerWorker =
+    (1 - baseOTRate) * normalAnnualHours
+    + baseOTRate * overtimeAnnualHours * efficiencyFactor
+  const totalLaborHours = employment * (
+    (1 - baseOTRate) * normalAnnualHours + baseOTRate * overtimeAnnualHours)
+  const effectiveHours = (1 - baseOTRate) * params.normalHours
+    + baseOTRate * totalHoursPerWeek * efficiencyFactor
+  const effectiveLaborInput = employment * avgAnnualHoursPerWorker * currentTechLevel
+
+  // === 劳动生产率 ===
+  const laborProductivity = totalLaborHours > 0 ? gdp / totalLaborHours * 10000 : 0
+
+  // === 通胀（稳态 Phillips 曲线）===
+  // 前瞻模型：π = (1-λ)×π_base + λ×π_{t-1} + φ×(u*-u)
+  // 稳态解（π = π_{t-1}）：π = π_base + φ/(1-λ) × (u*-u)
+  const naturalUnemploymentRate = 0.03
+  const inflationInertia = 0.6
+  const inflationRate = params.baseInflation
+    + params.phillipsCoeff / (1 - inflationInertia)
+    * (naturalUnemploymentRate - unemploymentRate)
+
+  // === 政府部门（与 model.ts 一致）===
+  const govRevenue = params.taxRate * gdp
+  const govConsumption = (1 - params.govInvestmentShare) * govRevenue
+  const govInvestment = params.govInvestmentShare * govRevenue
+
+  // === 收入分配（Cobb-Douglas 要素份额 + 税后，与 model.ts 一致）===
+  const laborShare = 1 - params.capitalElasticity
+  const totalLaborIncome = laborShare * gdp
+  const capitalIncome = params.capitalElasticity * gdp
+  const avgWage = employment > 0 ? totalLaborIncome / employment : 0
+
+  const disposableLaborIncome = (1 - params.taxRate) * totalLaborIncome
+  const disposableCapitalIncome = (1 - params.taxRate) * capitalIncome
+
+  // === 消费与储蓄（与 model.ts 动态调整公式完全一致）===
+  const recessionEffect = -0.3 * Math.max(0, -gdpGrowthRate)
+  const employmentDistributionEffect = -0.5 * (unemploymentRate - naturalUnemploymentRate)
+  const inflationUncertaintyEffect = -0.5 * Math.max(0, inflationRate - params.baseInflation)
+  const birthRateRef = 0.0064
+  const age65plusRef = 0.153
+  const birthConsumptionEffect = 20 * (birthRate - birthRateRef)
+  const agingConsumptionEffect = 0.15 * (age65plus - age65plusRef)
+  const demographicConsumptionEffect = birthConsumptionEffect + agingConsumptionEffect
+  const adjustedConsumptionPropensity = Math.max(0.4, Math.min(0.75,
+    params.consumptionPropensity + recessionEffect + employmentDistributionEffect
+    + inflationUncertaintyEffect + demographicConsumptionEffect))
+
+  const laborConsumption = adjustedConsumptionPropensity * disposableLaborIncome
+  const laborSavings = disposableLaborIncome - laborConsumption
+
+  const inflationInvestmentDrag = Math.max(0.5, 1 - 2 * Math.max(0, inflationRate - params.baseInflation))
+  const adjustedReinvestmentRate = params.capitalReinvestmentRate * inflationInvestmentDrag
+  const capitalReinvestment = adjustedReinvestmentRate * disposableCapitalIncome
+  const capitalConsumption = disposableCapitalIncome - capitalReinvestment
+
+  const consumption = laborConsumption + capitalConsumption + govConsumption
+
+  // === 储蓄与投资（S-I=NX 恒等式，使用实际净出口）===
+  const privateSavings = laborSavings + capitalReinvestment
+  const nationalSavings = privateSavings + govInvestment
+  const investment = nationalSavings - data.netExport
+
+  // === 出口增长率（从实际数据链式计算）===
+  const exportGrowthRate = prevResult && prevResult.export > 0
+    ? (data.export - prevResult.export) / prevResult.export
+    : 0
+
+  // === 进口倾向（基于模型消费口径）===
+  const importPropensity = consumption > 0
+    ? data.import / consumption
+    : params.baseImportPropensity
 
   return {
     period: data.period,
-    population: data.population,
+    population,
     birthPopulation,
     age0_14,
     age15_64,
     age65plus,
     laborForce,
-    employment: data.employment,
-    unemploymentRate: data.unemploymentRate,
-    laborRetention: 0.999,
-    gdp: data.gdp,
-    gdpPerCapita: data.gdp / data.population,
-    gdpGrowthRate: data.gdpGrowthRate,
-    totalLaborHours: data.employment * annualHoursPerWorker,
-    laborProductivity: data.gdp / (data.employment * annualHoursPerWorker) * 10000, // 元/小时
-    effectiveHours: weeklyHours * 0.97,  // 轻微疲劳
-    fatigueFactor: 0.03,
-    effectiveLaborInput: data.employment * annualHoursPerWorker * 0.97,
-    currentTechLevel: 1.0,  // 历史期统一基准
-    wage: data.wage / 10000,  // 元→万元
+    employment,
+    unemploymentRate,
+    laborRetention,
+    gdp,
+    gdpPerCapita: gdp / population,
+    gdpGrowthRate,
+    totalLaborHours,
+    laborProductivity,
+    effectiveHours,
+    fatigueFactor,
+    effectiveLaborInput,
+    currentTechLevel,
+    wage: avgWage,  // 与 model.ts 一致: totalLaborIncome / employment
     totalLaborIncome,
     capitalIncome,
-    cumulativeFatigue: 0.05,
+    cumulativeFatigue,
     consumption,
-    savings: totalLaborIncome - consumption,
+    savings: nationalSavings,
     export: data.export,
     import: data.import,
     netExport: data.netExport,
-    exportGrowthRate: 0.05,
-    importPropensity: data.import / data.gdp,
-    // 通胀：从菲利普斯曲线估算（与前瞻模型公式一致）
-    // π ≈ 2% + 0.3 × (3% - u) / (1 - 0.6)
-    inflationRate: 0.02 + 0.3 * (0.03 - data.unemploymentRate) / 0.4,
+    exportGrowthRate,
+    importPropensity,
+    inflationRate,
     priceLevel: 1.0,  // 占位，由 loadHistoricalResults 后处理累积
-    nominalGdp: data.gdp, // 历史 GDP 本身就是名义值
+    nominalGdp: gdp,  // 历史 GDP 本身为名义值
     capitalStock,
     investment,
+    govRevenue,
+    govConsumption,
+    govInvestment,
   }
 }

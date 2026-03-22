@@ -10,7 +10,10 @@ export function calcFatigueFactor(params: Params, hours: number): number {
   return params.fatigueCoeff * Math.pow(excess / params.normalHours, 2)
 }
 
-/** 计算有效工时（含疲劳折减，周单位） */
+/** 计算有效工时（含疲劳折减，周单位）
+ *  注意：此为简化版本，不按 overtimeRate 分层加权。
+ *  model.ts 中的实际计算按 overtimeRate 分别处理加班/非加班工人。
+ */
 export function calcEffectiveHours(params: Params): number {
   const totalHours = params.normalHours + params.overtimeHours
   const fatigue = calcFatigueFactor(params, totalHours)

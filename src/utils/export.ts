@@ -6,7 +6,8 @@ export function exportToCSV(results: PeriodResult[], filename: string = 'simulat
     '人口', '劳动力', '就业', '失业率',
     '劳动生产率', '总工时', '技术水平', '工资', '劳动收入', '资本收入',
     '消费', '储蓄', '出口', '进口', '净出口',
-    '资本存量', '投资'
+    '资本存量', '投资',
+    '政府收入', '政府消费', '政府投资'
   ]
 
   const rows = results.map(r => [
@@ -31,6 +32,9 @@ export function exportToCSV(results: PeriodResult[], filename: string = 'simulat
     r.netExport.toFixed(2),
     r.capitalStock.toFixed(2),
     r.investment.toFixed(2),
+    r.govRevenue.toFixed(2),
+    r.govConsumption.toFixed(2),
+    r.govInvestment.toFixed(2),
   ])
 
   const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')

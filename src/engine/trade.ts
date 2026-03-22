@@ -8,9 +8,9 @@ export function calcExportGrowth(
 ): number {
   if (!prevResult) return 0
 
-  // 出口增长 = 产能效应 + 竞争力效应 + 通胀拖累
+  // 出口增长 = 基础增长 + 产能效应 + 竞争力效应 + 通胀拖累 + 汇率效应
+
   // 产能效应：产出增长/萎缩 → 出口供给能力变化
-  // 不设人为下限：GDP暴跌时出口必须同步萎缩
   const capacityEffect = params.capacityExportElasticity * prevResult.gdpGrowthRate
 
   // 竞争力效应：相对于基准技术水平的提升（techLevel > 1 表示高于基准）
@@ -20,10 +20,19 @@ export function calcExportGrowth(
   const worldInflation = 0.02
   const inflationDrag = -0.5 * Math.max(0, inflationRate - worldInflation)
 
-  // 基础增长率为 2%
+  // 汇率/贸易平衡效应（自纠正机制）：
+  // 贸易顺差过大 → 实际汇率升值 + 贸易摩擦 → 出口增速放缓
+  // 均衡 NX/GDP ≈ 3%，高于此值出口受到抑制
+  // 系数 2.0：确保稳态 NX/GDP 收敛至 3-4%
+  //   稳态推导：在 exportGrowth = importGrowth = g 时，
+  //   NX*/GDP = 0.03 + (baseGrowth + techBonus - g) / 2.0 ≈ 3.5-4%
+  const prevNXShare = prevResult.gdp > 0 ? prevResult.netExport / prevResult.gdp : 0
+  const tradeBalanceDrag = -2.0 * Math.max(0, prevNXShare - 0.03)
+
+  // 基础增长率为 2%（世界贸易增速的中枢）
   const baseGrowth = 0.02
 
-  return baseGrowth + capacityEffect + competitivenessEffect + inflationDrag
+  return baseGrowth + capacityEffect + competitivenessEffect + inflationDrag + tradeBalanceDrag
 }
 
 export function calcExport(params: Params, prevResult: PeriodResult | null, currentTechLevel: number, inflationRate: number): number {
@@ -38,9 +47,18 @@ export function calcImportPropensity(
 ): number {
   if (!prevResult) return params.baseImportPropensity
 
-  // 进口倾向 = 基础倾向 + 收入效应（收入变化 → 进口需求变化）
+  // 进口倾向 = 基础倾向 + 收入效应 + 贸易再平衡效应
+
+  // 收入效应：收入增长 → 消费升级 → 进口需求增加
   const incomeEffect = params.incomeImportSensitivity * prevResult.gdpGrowthRate
-  return Math.max(0, Math.min(0.8, params.baseImportPropensity + incomeEffect))
+
+  // 贸易再平衡效应（自纠正机制）：
+  // 贸易顺差过大 → 实际汇率升值 → 进口变便宜 → 进口倾向上升
+  // 系数 0.5：与出口端的 2.0 配合，双向纠正贸易失衡
+  const prevNXShare = prevResult.gdp > 0 ? prevResult.netExport / prevResult.gdp : 0
+  const tradeRebalanceEffect = 0.5 * Math.max(0, prevNXShare - 0.03)
+
+  return Math.max(0, Math.min(0.8, params.baseImportPropensity + incomeEffect + tradeRebalanceEffect))
 }
 
 export function calcImport(
