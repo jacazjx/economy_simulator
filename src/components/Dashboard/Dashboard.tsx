@@ -47,7 +47,10 @@ export function Dashboard() {
           >
             ☰
           </button>
-          <h1>📊 经济模拟器</h1>
+          <div className="header-title">
+            <h1>📊 经济模拟器</h1>
+            <span className="disclaimer">免责声明：此模拟器仅用于学习和研究，无任何实际意义。所有模拟数值均由数值引擎计算，仅供参考。</span>
+          </div>
         </div>
         <div className="header-actions">
           <button onClick={handleReset}>重置</button>

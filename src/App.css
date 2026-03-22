@@ -69,8 +69,20 @@ body {
   font-size: 18px;
   color: var(--text-primary);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.header-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.disclaimer {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 400;
+  max-width: 400px;
+  line-height: 1.3;
 }
 
 .header-actions {
@@ -580,6 +592,10 @@ body {
 @media (max-width: 768px) {
   .menu-toggle {
     display: block;
+  }
+
+  .disclaimer {
+    display: none;
   }
 
   .dashboard-header {
