@@ -1,5 +1,5 @@
 import type { Params, PeriodResult } from './types'
-import { calcExport, calcImport, calcImportPropensity } from './trade'
+import { calcExport, calcExportGrowth, calcImport, calcImportPropensity } from './trade'
 
 /**
  * 校准 TFP（全要素生产率）基数
@@ -35,12 +35,14 @@ export function runSinglePeriod(
 
   // === 1. 人口动力学（内生：出生率 - 死亡率 + 净迁移）===
 
-  // 1a. 年龄结构（65+ 固定趋势；0-14 受出生率驱动）
+  // 1a. 年龄结构（65+ 受出生率反馈；0-14 受出生率驱动）
   const baseAge65plus = prevResult ? prevResult.age65plus : 0.153
-  const age65plus = Math.min(0.35, baseAge65plus + 0.005) // 每年 +0.5pp（历史队列效应）
-  // 0-14岁占比：向 birthRate×14（队列均衡值）平滑收敛
   const prevAge0_14 = prevResult ? prevResult.age0_14 : 0.165
   const prevBirthRate = prevResult ? prevResult.birthPopulation / prevResult.population : 0.0064
+  // 老龄化速度受出生率反馈：高出生率→年轻队列壮大→老龄化增速放缓
+  const agingSpeed = Math.max(0.002, Math.min(0.008,
+    0.005 + 0.4 * (0.0064 - prevBirthRate)))  // 以2025出生率6.4‰为校准锚点
+  const age65plus = Math.min(0.35, baseAge65plus + agingSpeed)
   const birthDrivenAge0_14 = Math.min(0.25, prevBirthRate * 14)
   const age0_14 = Math.max(0.05, 0.9 * prevAge0_14 + 0.1 * birthDrivenAge0_14)
   const age15_64 = 1 - age65plus - age0_14
@@ -49,7 +51,8 @@ export function runSinglePeriod(
   const prevCumulativeFatigue = prevResult ? prevResult.cumulativeFatigue : 0
   const overworkMortalityPenalty = prevCumulativeFatigue * 0.001
   // 减时 → 低压力 → 健康改善 → 死亡率下降
-  const leisureHealthBonus = Math.max(0, -workHoursDeviation) * 0.001
+  // 减时健康红利增强：减少过劳改善慢性病预后（系数 0.001→0.003）
+  const leisureHealthBonus = Math.max(0, -workHoursDeviation) * 0.003
   const deathRate = Math.max(0.005, 0.007 + age65plus * 0.005 + overworkMortalityPenalty - leisureHealthBonus)
 
   // 1c. 出生率：完全内生，由经济条件驱动
@@ -57,28 +60,38 @@ export function runSinglePeriod(
   // 影响因子1：工时偏离对家庭时间的影响（对称）
   // 加班 → 挤压家庭时间 → 生育率↓（惩罚，上限70%）
   // 减时 → 增加家庭时间 → 生育率↑（奖励，上限30%，边际递减）
-  const workLifeEffect = Math.max(-0.3, Math.min(0.7, workHoursDeviation * 0.4))
+  // 非对称：减时对生育的提升更强（北欧经验：工作生活平衡政策可提升生育率30-50%）
+  // 加班惩罚不变（保留2025校准）
+  const workLifeEffect = workHoursDeviation >= 0
+    ? Math.min(0.7, workHoursDeviation * 0.4)     // 加班惩罚（不变）
+    : Math.max(-0.5, workHoursDeviation * 0.8)    // 减时奖励（增强：敏感度0.4→0.8，上限30%→50%）
   // 影响因子2：经济压力（双通道，区分"预期落空"与"经济衰退"）
-  // 趋势增长率：动态适应当前经济阶段（50%实际增长 + 50%TFP趋势）
+  // 趋势增长率：动态适应当前经济阶段（70%实际增长 + 30%TFP趋势）
+  //   更多跟随实际增速，减少政策转换期的"增长落差"冲击
   //   避免人口老龄化导致的增速自然放缓被误判为"经济危机"
-  //   如：GDP增速因老龄化从2%放缓至1.5%，自适应趋势≈1.75%，仅产生微小压力
   const prevGdpGrowthForStress = prevResult ? prevResult.gdpGrowthRate : params.tfpGrowthRate
   const adaptiveTrend = prevResult
-    ? 0.5 * Math.max(0, prevResult.gdpGrowthRate) + 0.5 * params.tfpGrowthRate
+    ? 0.7 * Math.max(0, prevResult.gdpGrowthRate) + 0.3 * params.tfpGrowthRate
     : params.tfpGrowthRate
-  // 通道A：增长低于自适应趋势（预期落空）→ 温和压力
+  // 通道A：增长低于自适应趋势（预期落空）→ 温和压力（敏感度 2→1.5）
   const growthShortfall = Math.max(0, adaptiveTrend - prevGdpGrowthForStress)
-  const expectationStress = growthShortfall * 2
+  const expectationStress = growthShortfall * 1.5
   // 通道B：GDP 绝对负增长（经济衰退）→ 强烈压力
   const recessionStress = Math.max(0, -prevGdpGrowthForStress) * 5
   const economicStressFactor = Math.min(0.5, Math.max(expectationStress, recessionStress))
+  // 影响因子3：就业安全感（Adsera 2004; Sobotka 2011：就业稳定是生育决策关键因素）
+  // 使用上期失业率（当期尚未计算），以5%为中性参考点
+  const prevUnemployment = prevResult ? prevResult.unemploymentRate : 0.05
+  const employmentSecurityBonus = 1.5 * Math.max(0, 0.05 - prevUnemployment)
+  const unemploymentBirthPenalty = 1.0 * Math.max(0, prevUnemployment - 0.05)
+  const employmentBirthEffect = employmentSecurityBonus - unemploymentBirthPenalty
   // 基准出生率校准：零加班 + 零经济压力条件下的理论值
   // 中国2025年实际出生率 6.4‰ 已包含基准加班（7h/57%）的抑制效应
   // 校准使 baseBirthRate × (1 - workLifeEffect_china) = 6.4‰
   //   workLifeEffect_china = 0.57×7/40×0.4 ≈ 0.04
   //   baseBirthRate = 6.4‰ / 0.96 ≈ 6.67‰
   const baseBirthRate = 0.00667
-  const birthRate = Math.max(0.002, baseBirthRate * (1 - workLifeEffect) * (1 - economicStressFactor))
+  const birthRate = Math.max(0.002, baseBirthRate * (1 - workLifeEffect) * (1 - economicStressFactor) * (1 + employmentBirthEffect))
 
   // 1d. 人口 = 上期人口 × (1 + 出生率 - 死亡率 + 净迁移率)
   const naturalGrowthRate = birthRate - deathRate
@@ -126,10 +139,11 @@ export function runSinglePeriod(
   // 加班 → 疲劳 → 每小时效率下降（下限0.3）
   // 减时 → 专注度提升 → 每小时效率上升（上限1.2，即+20%）
   const reducedHours = Math.max(0, params.normalHours - totalHoursPerWeek)
-  const hourlyConcentrationBonus = reducedHours / params.normalHours * 0.2
+  // 减时专注度提升增强（Pencavel 2014：减少过度工时可显著提升时均产出）
+  const hourlyConcentrationBonus = reducedHours / params.normalHours * 0.35
   const efficiencyFactor = excessHours > 0
     ? Math.max(0.3, 1 - fatigueFactor)
-    : Math.min(1.2, 1 + hourlyConcentrationBonus)
+    : Math.min(1.3, 1 + hourlyConcentrationBonus)  // 上限 1.2→1.3
 
   // === 5. 累积疲劳与劳动力留存（长期效应）===
   const fatigueRecoveryRate = 0.1
@@ -193,91 +207,118 @@ export function runSinglePeriod(
     ? prevResult.priceLevel * (1 + inflationRate)
     : 1.0
 
-  // === 9. GDP（柯布-道格拉斯生产函数）===
-  // Y = TFP_base × K^α × L^(1-α)
-  // TFP_base 已校准使初始条件下产出匹配实际 GDP
-  const gdp = tfpBase
-    * Math.pow(capitalStock, params.capitalElasticity)
-    * Math.pow(effectiveLabor, 1 - params.capitalElasticity)
-
-  // === 9b. 政府部门（税收→财政支出分配）===
-  const govRevenue = params.taxRate * gdp
-  const govConsumptionSpending = (1 - params.govInvestmentShare) * govRevenue
-  const govInvestmentSpending = params.govInvestmentShare * govRevenue
-
-  // === 10. 收入分配（Cobb-Douglas 要素份额 + 税后可支配收入）===
-  const laborShare = 1 - params.capitalElasticity
-  const totalLaborIncome = laborShare * gdp          // 税前总劳动收入
-  const capitalIncome = params.capitalElasticity * gdp // 税前资本收入
-
-  // 人均年工资 = 税前总劳动收入 / 就业人数（万元/人）
-  const avgWage = employment > 0 ? totalLaborIncome / employment : 0
-
-  // 税后可支配收入
-  const disposableLaborIncome = (1 - params.taxRate) * totalLaborIncome
-  const disposableCapitalIncome = (1 - params.taxRate) * capitalIncome
-
-  // === 11. 消费与储蓄（含就业分配效应 + 通胀反馈）===
-  // 消费倾向动态调整：
-  //   衰退 → 预防性储蓄↑ → 消费倾向↓
-  //   就业分配效应（对称）：
-  //     低失业 → 更多人有工资收入 → 边际消费倾向更高 → 总消费倾向↑
-  //     高失业 → 更多人失去收入 → 消费信心下降 → 总消费倾向↓
-  //     经济学原理：凯恩斯消费函数 C = a + bY，收入分配到更多人时
-  //     自发性消费 a 的贡献增大，整体消费倾向上升
-  //   高通胀 → 不确定性↑ → 预防性储蓄↑ → 消费倾向↓
+  // === 9a. 消费倾向预计算（需求侧信号，先于 GDP 确定）===
+  // 消费倾向动态调整（5 个通道）：
   const recessionEffect = -0.3 * Math.max(0, -(prevResult ? prevResult.gdpGrowthRate : 0))
   const employmentDistributionEffect = -0.5 * (unemploymentRate - naturalUnemploymentRate)
-  const inflationUncertaintyEffect = -0.5 * Math.max(0, inflationRate - params.baseInflation)
-  // 人口结构消费效应（凯恩斯自主消费的代理）：
-  //   高出生率 → 育儿刚需消费（奶粉、教育、医疗）→ 消费倾向↑
-  //   高老龄化 → 养老医疗刚需 → 消费倾向↑
-  //   以2025年中国为基准，偏离基准时调整消费倾向
-  const birthRateRef = 0.0064   // 2025年中国实际出生率
-  const age65plusRef = 0.153    // 2025年中国老龄化率
+  // 温和通胀（2-4%）不抑制消费；仅超过基准+2pp时产生不确定性效应
+  const harmfulInflationThreshold = params.baseInflation + 0.02
+  const inflationUncertaintyEffect = -0.5 * Math.max(0, inflationRate - harmfulInflationThreshold)
+  const birthRateRef = 0.0064
+  const age65plusRef = 0.153
   const birthConsumptionEffect = 20 * (birthRate - birthRateRef)
   const agingConsumptionEffect = 0.15 * (age65plus - age65plusRef)
   const demographicConsumptionEffect = birthConsumptionEffect + agingConsumptionEffect
+  // 通道6：闲暇消费效应 — 减时 → 更多消费时间（餐饮、旅游、娱乐）
+  const leisureConsumptionEffect = Math.max(0, -workHoursDeviation) * 0.15
   const adjustedConsumptionPropensity = Math.max(0.4, Math.min(0.75,
     params.consumptionPropensity + recessionEffect + employmentDistributionEffect
-    + inflationUncertaintyEffect + demographicConsumptionEffect))
+    + inflationUncertaintyEffect + demographicConsumptionEffect + leisureConsumptionEffect))
+
+  // === 9b. 潜在 GDP（供给侧：柯布-道格拉斯生产函数）===
+  const potentialGdp = tfpBase
+    * Math.pow(capitalStock, params.capitalElasticity)
+    * Math.pow(effectiveLabor, 1 - params.capitalElasticity)
+
+  // === 9c. 产能利用率（需求侧反馈：三驾马车拉动 GDP）===
+  // 当总需求强于供给潜力 → 产能利用率 > 1 → 实际 GDP > 潜在 GDP
+  // 当总需求弱于供给潜力 → 产能利用率 < 1 → 产出缺口（经济衰退）
+  //
+  // 三驾马车的需求信号（均为当期或上期可观测量，无循环依赖）：
+  //
+  // 1. 消费需求：消费倾向偏离基准 → 消费意愿变化
+  //    高消费倾向 → 居民愿意花更多钱 → 需求拉动 GDP↑
+  const consumptionDemand = adjustedConsumptionPropensity - params.consumptionPropensity
+
+  // 2. 投资需求：自主投资函数（前瞻性，非残差）
+  //    加速器效应：GDP增长 → 预期需求持续 → 扩大投资
+  //    产能利用率效应：高CU → 接近产能上限 → 需要扩产
+  const baseInvestmentShare = 0.37
+  const prevGdpGrowthForInv = prevResult ? prevResult.gdpGrowthRate : params.tfpGrowthRate
+  const prevCU = prevResult ? prevResult.capacityUtilization : 1.0
+  const acceleratorEffect = 0.5 * prevGdpGrowthForInv       // 加速器
+  const cuInvestmentEffect = 0.3 * (prevCU - 1.0)            // 产能缺口
+  const desiredInvestmentShare = Math.max(0.20, Math.min(0.55,
+    baseInvestmentShare + acceleratorEffect + cuInvestmentEffect))
+  const investmentDemand = desiredInvestmentShare - baseInvestmentShare
+
+  // 3. 出口需求：出口增速 → 外部需求变化
+  //    出口高增长 → 海外订单充足 → 需求拉动 GDP↑
+  const exportGrowthSignal = calcExportGrowth(params, prevResult, currentTechLevel, inflationRate)
+
+  // 综合产能利用率 = 1 + 三驾马车加权贡献
+  // 系数含义：消费需求每偏离 1pp → GDP 调整 0.3%
+  //          投资需求每偏离 1pp → GDP 调整 0.3%
+  //          出口增速每变化 1% → GDP 调整 0.15%
+  // 范围 [0.85, 1.05]：最大产出缺口 15%，最大过热 5%
+  // 放宽产能利用率范围：允许更深衰退（0.75）和更强过热（1.12）
+  // 增强需求侧系数，让消费和投资变化对GDP有更显著的传导
+  const capacityUtilization = Math.max(0.75, Math.min(1.12,
+    1.0
+    + 0.4 * consumptionDemand      // 消费拉动（0.3→0.4）
+    + 0.4 * investmentDemand       // 投资拉动（0.3→0.4）
+    + 0.2 * exportGrowthSignal     // 出口拉动（0.15→0.2）
+  ))
+
+  // === 9d. 实际 GDP = 产能利用率 × 潜在 GDP ===
+  const gdp = capacityUtilization * potentialGdp
+
+  // === 10. 政府部门（税收 → 反周期财政支出）===
+  const govRevenue = params.taxRate * gdp
+  // 反周期财政：经济低于趋势 → 增支刺激，高于趋势 → 减支降温
+  // 系数3.0：增速每低于趋势1pp，政府多支出3%（中国积极财政风格）
+  // 上限+30%（深度衰退时赤字扩张），下限-15%（过热时财政盈余）
+  const prevGrowthForFiscal = prevResult ? prevResult.gdpGrowthRate : params.tfpGrowthRate
+  const fiscalGap = params.tfpGrowthRate - prevGrowthForFiscal  // 正值=低于趋势
+  const fiscalIntensity = 3.0
+  const fiscalAdjustment = Math.max(-0.15, Math.min(0.3, fiscalIntensity * fiscalGap))
+  const effectiveGovSpending = govRevenue * (1 + fiscalAdjustment)
+  const govConsumptionSpending = (1 - params.govInvestmentShare) * effectiveGovSpending
+  const govInvestmentSpending = params.govInvestmentShare * effectiveGovSpending
+
+  // === 11. 收入分配（Cobb-Douglas 要素份额 + 税后可支配收入）===
+  const laborShare = 1 - params.capitalElasticity
+  const totalLaborIncome = laborShare * gdp
+  const capitalIncome = params.capitalElasticity * gdp
+  const avgWage = employment > 0 ? totalLaborIncome / employment : 0
+  const disposableLaborIncome = (1 - params.taxRate) * totalLaborIncome
+  const disposableCapitalIncome = (1 - params.taxRate) * capitalIncome
+
+  // === 12. 消费与储蓄（消费金额基于实际 GDP 的收入）===
   const laborConsumption = adjustedConsumptionPropensity * disposableLaborIncome
   const laborSavings = disposableLaborIncome - laborConsumption
-
-  // 资本再投资率受通胀影响（Issue 4 新增）：
-  // 高通胀 → 名义利率上升 → 资本成本增加 → 再投资意愿下降
-  const inflationInvestmentDrag = Math.max(0.5, 1 - 2 * Math.max(0, inflationRate - params.baseInflation))
+  // 投资拖累同样仅在通胀超过有害阈值（基准+2pp）时生效
+  const inflationInvestmentDrag = Math.max(0.5, 1 - 2 * Math.max(0, inflationRate - harmfulInflationThreshold))
   const adjustedReinvestmentRate = params.capitalReinvestmentRate * inflationInvestmentDrag
   const capitalReinvestment = adjustedReinvestmentRate * disposableCapitalIncome
   const capitalConsumption = disposableCapitalIncome - capitalReinvestment
-
-  // 总消费 = 私人劳动消费 + 私人资本消费 + 政府消费
-  // GDP = privateC + govC + I + NX 严格成立（见下方推导）
   const consumption = laborConsumption + capitalConsumption + govConsumptionSpending
 
-  // === 12. 外贸（先于投资计算，因 S-I=NX 恒等式约束投资）===
-  // 出口受产能约束：不能出口超过产出的合理比例（中国历史峰值约35%）
+  // === 13. 外贸 ===
   const rawExport = calcExport(params, prevResult, currentTechLevel, inflationRate)
   const maxExportShare = 0.35
   const exportVal = Math.min(rawExport, gdp * maxExportShare)
-  const importVal = calcImport(params, consumption, prevResult)
+  const importVal = calcImport(params, consumption, gdp, prevResult)
   const netExport = exportVal - importVal
 
-  // === 13. 投资（S - I = NX 恒等式，允许负投资=资本净流出）===
-  // 国民储蓄 = 私人储蓄 + 政府储蓄（政府投资性支出视为公共储蓄）
-  // I = S_national - NX
-  // 证明 C + I + NX = Y：
-  //   C + I + NX = (privateC + govC) + (S_national - NX) + NX
-  //   = privateC + govC + S_national
-  //   = (laborC + capitalC) + govC + (laborS + capitalReinvest + govInvest)
-  //   = disposableLaborIncome + disposableCapitalIncome + govRevenue
-  //   = (1-τ)(1-α)Y + (1-τ)αY + τY = (1-τ)Y + τY = Y ✓
+  // === 14. 投资（S - I = NX 恒等式）===
+  // 国民储蓄 = 私人储蓄 + 政府储蓄（赤字时为负），C + I + NX = Y 严格成立
   const privateSavings = laborSavings + capitalReinvestment
-  const nationalSavings = privateSavings + govInvestmentSpending
-  const totalInvestment = nationalSavings - netExport  // 允许负值（资本净流出）
+  const govSavings = govRevenue - govConsumptionSpending  // 负值 = 财政赤字（反周期增支超过税收）
+  const nationalSavings = privateSavings + govSavings
+  const totalInvestment = nationalSavings - netExport
 
-  // === 14. 最终 GDP ===
-  // 使用生产法（supply-side）作为 GDP 唯一计算来源
+  // === 15. 最终 GDP ===
   const finalGdp = gdp
 
   return {
@@ -324,6 +365,7 @@ export function runSinglePeriod(
     nominalGdp: finalGdp * priceLevel,
     capitalStock,
     investment: totalInvestment,
+    capacityUtilization,
     govRevenue,
     govConsumption: govConsumptionSpending,
     govInvestment: govInvestmentSpending,

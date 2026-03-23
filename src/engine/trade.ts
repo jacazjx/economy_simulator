@@ -64,8 +64,15 @@ export function calcImportPropensity(
 export function calcImport(
   params: Params,
   consumption: number,
+  gdp: number,
   prevResult: PeriodResult | null
 ): number {
   const propensity = calcImportPropensity(params, prevResult)
-  return Math.max(0, propensity * consumption)
+  // 三通道进口：消费品(55%) + 中间品/资本品(45%, 挂钩GDP)
+  // 中国进口中约60%为中间品和资本品，纯消费模型低估生产扩张时的进口需求
+  // productionWeight = 0.45 × 基线消费/GDP比(≈0.584) ≈ 0.263，确保基线总量不变
+  const consumptionWeight = 0.55
+  const productionWeight = 0.263
+  const importBase = consumptionWeight * consumption + productionWeight * gdp
+  return Math.max(0, propensity * importBase)
 }

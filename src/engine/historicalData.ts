@@ -27,9 +27,9 @@ export interface HistoricalDataPoint {
 // 注：部分数据经过简化处理，以匹配模型单位
 export const CHINA_HISTORICAL_DATA: HistoricalDataPoint[] = [
   // 2000年 - 第1期
-  { year: 2000, period: 1, population: 126743, employment: 72085, unemploymentRate: 0.034, gdp: 100280, gdpGrowthRate: 0.084, wage: 9333, export: 20634, import: 18639, netExport: 1995 },
+  { year: 2000, period: 1, population: 126743, employment: 72085, unemploymentRate: 0.034, gdp: 100280, gdpGrowthRate: 0.085, wage: 9333, export: 20634, import: 18639, netExport: 1995 },
   // 2001年 - 第2期
-  { year: 2001, period: 2, population: 127627, employment: 73025, unemploymentRate: 0.036, gdp: 110863, gdpGrowthRate: 0.085, wage: 10834, export: 22024, import: 20159, netExport: 1865 },
+  { year: 2001, period: 2, population: 127627, employment: 73025, unemploymentRate: 0.036, gdp: 110863, gdpGrowthRate: 0.083, wage: 10834, export: 22024, import: 20159, netExport: 1865 },
   // 2002年 - 第3期
   { year: 2002, period: 3, population: 128453, employment: 73740, unemploymentRate: 0.040, gdp: 121717, gdpGrowthRate: 0.091, wage: 12373, export: 26948, import: 24430, netExport: 2518 },
   // 2003年 - 第4期
@@ -47,7 +47,7 @@ export const CHINA_HISTORICAL_DATA: HistoricalDataPoint[] = [
   // 2009年 - 第10期
   { year: 2009, period: 10, population: 133450, employment: 77995, unemploymentRate: 0.043, gdp: 349081, gdpGrowthRate: 0.092, wage: 32244, export: 82030, import: 68618, netExport: 13412 },
   // 2010年 - 第11期
-  { year: 2010, period: 11, population: 134091, employment: 76105, unemploymentRate: 0.041, gdp: 412119, gdpGrowthRate: 0.106, wage: 36539, export: 107023, import: 94700, netExport: 12323 },
+  { year: 2010, period: 11, population: 134091, employment: 76105, unemploymentRate: 0.041, gdp: 412119, gdpGrowthRate: 0.106, wage: 37147, export: 107023, import: 94700, netExport: 12323 },
   // 2011年 - 第12期
   { year: 2011, period: 12, population: 134735, employment: 76420, unemploymentRate: 0.041, gdp: 487940, gdpGrowthRate: 0.095, wage: 41799, export: 123241, import: 113161, netExport: 10080 },
   // 2012年 - 第13期
@@ -67,15 +67,15 @@ export const CHINA_HISTORICAL_DATA: HistoricalDataPoint[] = [
   // 2019年 - 第20期
   { year: 2019, period: 20, population: 140005, employment: 77471, unemploymentRate: 0.038, gdp: 986515, gdpGrowthRate: 0.060, wage: 90501, export: 172374, import: 143254, netExport: 29120 },
   // 2020年 - 第21期
-  { year: 2020, period: 21, population: 141212, employment: 75064, unemploymentRate: 0.054, gdp: 1015986, gdpGrowthRate: 0.022, wage: 97379, export: 179326, import: 142936, netExport: 36390 },
+  { year: 2020, period: 21, population: 141212, employment: 75064, unemploymentRate: 0.056, gdp: 1015986, gdpGrowthRate: 0.023, wage: 97379, export: 179326, import: 142231, netExport: 37095 },
   // 2021年 - 第22期
-  { year: 2021, period: 22, population: 141260, employment: 74652, unemploymentRate: 0.052, gdp: 1149237, gdpGrowthRate: 0.081, wage: 106837, export: 217348, import: 173661, netExport: 43687 },
+  { year: 2021, period: 22, population: 141260, employment: 74652, unemploymentRate: 0.051, gdp: 1149237, gdpGrowthRate: 0.081, wage: 106837, export: 217348, import: 173661, netExport: 43687 },
   // 2022年 - 第23期
   { year: 2022, period: 23, population: 141175, employment: 73351, unemploymentRate: 0.056, gdp: 1210207, gdpGrowthRate: 0.030, wage: 114029, export: 239654, import: 181024, netExport: 58630 },
   // 2023年 - 第24期
   { year: 2023, period: 24, population: 140967, employment: 74041, unemploymentRate: 0.052, gdp: 1260582, gdpGrowthRate: 0.052, wage: 120698, export: 237726, import: 179842, netExport: 57884 },
   // 2024年 - 第25期
-  { year: 2024, period: 25, population: 140828, employment: 73439, unemploymentRate: 0.051, gdp: 1349084, gdpGrowthRate: 0.050, wage: 124110, export: 254545, import: 183911, netExport: 70634 },
+  { year: 2024, period: 25, population: 140828, employment: 73439, unemploymentRate: 0.051, gdp: 1349084, gdpGrowthRate: 0.050, wage: 124110, export: 254545, import: 183923, netExport: 70622 },
   // 2025年 - 第26期（基于2024年数据和5%增长率估算）
   { year: 2025, period: 26, population: 140600, employment: 75000, unemploymentRate: 0.050, gdp: 1416537, gdpGrowthRate: 0.050, wage: 130000, export: 267000, import: 193000, netExport: 74000 },
 ]
@@ -251,6 +251,7 @@ export function convertToPeriodResult(
     nominalGdp: gdp,  // 历史 GDP 本身为名义值
     capitalStock,
     investment,
+    capacityUtilization: 1.0,  // 历史期：实际GDP即为观测值，隐含产能利用率=1
     govRevenue,
     govConsumption,
     govInvestment,

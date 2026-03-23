@@ -71,6 +71,8 @@ export interface PeriodResult {
   // 资本
   capitalStock: number
   investment: number
+  // 需求侧
+  capacityUtilization: number    // 产能利用率（需求侧反馈，1.0=供需均衡）
   // 政府部门
   govRevenue: number             // 政府财政收入（亿）
   govConsumption: number         // 政府消费支出（亿）
